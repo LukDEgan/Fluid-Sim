@@ -286,18 +286,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f42c90405fabe6540bb5ed157cff743e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Simulation
-  numberOfParticles: 1500
+  numberOfParticles: 3500
   targetDensity: 3
   pressureMultiplier: 30
   particleSpacing: 0.01
   radius: 0.05
   gravity: 0
-  collisionDamping: 0.9
+  collisionDamping: 0.95
   smoothingRadius: 0.5
-  interactionRadius: 2
-  interactionStrength: 50
-  boundsSize: {x: 12.74, y: 7.61}
-  substeps: 3
+  boundsSize: {x: 14.9, y: 9.3}
+  substeps: 5
+  viscosityStrength: 0.5
 --- !u!4 &1934829022
 Transform:
   m_ObjectHideFlags: 0

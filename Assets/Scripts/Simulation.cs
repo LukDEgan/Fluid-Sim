@@ -17,10 +17,11 @@ public class Simulation : MonoBehaviour
     public float radius;
     public float gravity;
     public float collisionDamping;
+
     public float smoothingRadius;
-    public float interactionRadius = 2f;
-    public float interactionStrength = 50f;
-    public float maxVisualizedSpeed = 5f;
+    float interactionRadius = 1.5f;
+    float interactionStrength = 30f;
+    float maxVisualizedSpeed = 5f;
 
     public Vector2 boundsSize;
     Vector2[] positions;
@@ -35,6 +36,7 @@ public class Simulation : MonoBehaviour
     bool isPulling;
     bool isPushing;
     public int substeps = 4;
+    public float viscosityStrength = 0.5f;
     MaterialPropertyBlock propertyBlock;
     static readonly int ColorID = Shader.PropertyToID("_Color");
     (int x, int y)[] cellOffSets =
@@ -114,7 +116,7 @@ public class Simulation : MonoBehaviour
             {
                 if (spatialLookup[i].cellKey != key) break;
                 int particleIndex = spatialLookup[i].particleIndex;
-                float sqrDst = (predictedPositions[particleIndex] - samplePoint).sqrMagnitude;
+                float sqrDst = (positions[particleIndex] - samplePoint).sqrMagnitude;
                 if (sqrDst <= sqrRadius)
                 {
                     callback(particleIndex);
@@ -226,6 +228,7 @@ public class Simulation : MonoBehaviour
             velocities[i] += Vector2.down * gravity * dt;
             predictedPositions[i] = positions[i] + velocities[i] * 1 / 120f;
 
+
         });
 
         UpdateSpatialLookup(predictedPositions);
@@ -243,6 +246,11 @@ public class Simulation : MonoBehaviour
             velocities[i] += pressureAcceleration * dt;
 
         });
+        Parallel.For(0, numberOfParticles, i =>
+        {
+            Vector2 viscosityForce = CalculateViscosityForce(i);
+            velocities[i] += viscosityForce * dt;
+        });
         if (isPulling || isPushing)
         {
             ApplyInteraction(dt);
@@ -251,6 +259,7 @@ public class Simulation : MonoBehaviour
         // Update positions and collisions
         Parallel.For(0, numberOfParticles, i =>
         {
+
             positions[i] += velocities[i] * dt;
             ResolveCollisions(ref positions[i], ref velocities[i]);
         });
@@ -300,6 +309,13 @@ public class Simulation : MonoBehaviour
         float scale = 12 / (Mathf.PI * Mathf.Pow(radius, 4));
         return (dst - radius) * scale;
     }
+    float ViscositySmoothKernel(float radius, float dst)
+    {
+        if (dst >= radius) return 0;
+        float volume = (Mathf.PI * Mathf.Pow(radius, 4)) / 6;
+        float value = Mathf.Max(0, radius * radius - dst * dst);
+        return value * value * value / volume;
+    }
     float CalculateSharedPressure(float densityA, float densityB)
     {
         float pressureA = ConvertDensityToPressure(densityA);
@@ -332,10 +348,22 @@ public class Simulation : MonoBehaviour
 
         return pressureForce;
     }
+    Vector2 CalculateViscosityForce(int particleIndex)
+    {
+        Vector2 viscosityForce = Vector2.zero;
+        Vector2 position = positions[particleIndex];
+        ForEachPointWithinRadius(position, otherIndex =>
+        {
+            float dst = (position - positions[otherIndex]).magnitude;
+            float influence = ViscositySmoothKernel(smoothingRadius, dst);
+            viscosityForce += (velocities[otherIndex] - velocities[particleIndex]) * influence;
+        });
+        return viscosityForce * viscosityStrength;
+    }
     Vector2 InteractionForce(Vector2 inputPos, float radius, float strength, int particleIndex)
     {
         Vector2 interactionForce = Vector2.zero;
-        Vector2 offset = inputPos - predictedPositions[particleIndex];
+        Vector2 offset = inputPos - positions[particleIndex];
         float sqrDst = Vector2.Dot(offset, offset);
 
         if (sqrDst < radius * radius)
