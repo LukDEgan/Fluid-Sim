@@ -4,47 +4,59 @@ using System;
 using System.Threading.Tasks;
 
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 
 
 public class Simulation : MonoBehaviour
 {
     // Start is called once before the first execution of Update after the MonoBehaviour is created
+    [Header("Settings")]
+    public float timeScale = 1f;
+    public int maxTimestepFPS = 60;
+    public int substeps = 4;
     public int numberOfParticles;
-    public float targetDensity;
     public float pressureMultiplier;
+    public float nearPressureMultiplier;
+    public float viscosityStrength = 0.5f;
+    public float gravity;
+    public float targetDensity;
     public float particleSpacing;
     public float radius;
-    public float gravity;
-    public float collisionDamping;
-
+    [Range(0, 1)] public float collisionDamping = 0.95f;
     public float smoothingRadius;
-    float interactionRadius = 1.5f;
-    float interactionStrength = 30f;
-    float maxVisualizedSpeed = 5f;
-
     public Vector2 boundsSize;
+
+    [Header("Interaction Settings")]
+    public float interactionRadius = 2f;
+    public float interactionStrength = 50f;
+    bool isPaused;
+
+    bool stepOneFrame;
+
+
     Vector2[] positions;
     Vector2[] velocities;
     Entry[] spatialLookup;
     int[] startIndices;
     Vector2[] predictedPositions;
-    Mesh circleMesh;
-    Material circleMaterial;
-    float[] densities;
+
+    (float, float)[] densities; // density and near density
     Vector2 mousePosition;
     bool isPulling;
     bool isPushing;
-    public int substeps = 4;
-    public float viscosityStrength = 0.5f;
-    MaterialPropertyBlock propertyBlock;
-    static readonly int ColorID = Shader.PropertyToID("_Color");
+
+
+
     (int x, int y)[] cellOffSets =
   {
     (-1, -1), (0, -1), (1, -1),
     (-1,  0), (0,  0), (1,  0),
     (-1,  1), (0,  1), (1,  1)
 };
+    // Buffers
+    public ComputeBuffer positionBuffer { get; private set; }
+    public ComputeBuffer velocityBuffer { get; private set; }
     public struct Entry : IComparable<Entry>
     {
         public int particleIndex;
@@ -116,7 +128,7 @@ public class Simulation : MonoBehaviour
             {
                 if (spatialLookup[i].cellKey != key) break;
                 int particleIndex = spatialLookup[i].particleIndex;
-                float sqrDst = (positions[particleIndex] - samplePoint).sqrMagnitude;
+                float sqrDst = (predictedPositions[particleIndex] - samplePoint).sqrMagnitude;
                 if (sqrDst <= sqrRadius)
                 {
                     callback(particleIndex);
@@ -124,45 +136,13 @@ public class Simulation : MonoBehaviour
             }
         }
     }
-    void CreateCircleMesh()
-    {
-        int segments = 20;
-        Vector3[] vertices = new Vector3[segments + 1];
-        int[] triangles = new int[segments * 3];
 
-        vertices[0] = Vector3.zero;
-        for (int i = 0; i < segments; i++)
-        {
-            float angle = i / (float)segments * Mathf.PI * 2;
-            vertices[i + 1] = new Vector3(Mathf.Cos(angle), Mathf.Sin(angle), 0);
-        }
 
-        for (int i = 0; i < segments; i++)
-        {
-            triangles[i * 3] = 0;
-            triangles[i * 3 + 1] = i + 1;
-            triangles[i * 3 + 2] = (i + 1) % segments + 1;
-        }
-
-        circleMesh = new Mesh();
-        circleMesh.vertices = vertices;
-        circleMesh.triangles = triangles;
-        circleMesh.RecalculateNormals();
-
-        circleMaterial = new Material(Shader.Find("Sprites/Default"));
-    }
-    void DrawCircle(Vector2 pos, float radius, Color colour)
-    {
-        propertyBlock.SetColor(ColorID, colour);
-
-        Matrix4x4 matrix = Matrix4x4.TRS(pos, Quaternion.identity, Vector3.one * radius);
-        Graphics.DrawMesh(circleMesh, matrix, circleMaterial, 0, null, 0, propertyBlock);
-    }
 
     void SpawnUniformParticles()
     {
 
-        densities = new float[numberOfParticles];
+        densities = new (float, float)[numberOfParticles];
         positions = new Vector2[numberOfParticles];
         velocities = new Vector2[numberOfParticles];
         predictedPositions = new Vector2[numberOfParticles];
@@ -187,46 +167,69 @@ public class Simulation : MonoBehaviour
 
     void Start()
     {
-        CreateCircleMesh();
-        propertyBlock = new MaterialPropertyBlock();
+
         SpawnUniformParticles();
+        Init();
+    }
+    void Init()
+    {
+        float deltaTime = 1 / 60f;
+        Time.fixedDeltaTime = deltaTime;
+        positionBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
+        velocityBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
+
+
+        positionBuffer.SetData(positions);
+        velocityBuffer.SetData(velocities);
+
     }
 
     // Update is called once per frame
     void Update()
     {
-        UpdateInput();
-        float dt = Time.deltaTime / substeps;
+        HandleInput();
 
-        for (int step = 0; step < substeps; step++)
+        bool shouldSimulate = !isPaused || stepOneFrame;
+
+        if (shouldSimulate)
         {
-            SimulationStep(dt);
+            float maxDeltaTime = maxTimestepFPS > 0 ? 1f / maxTimestepFPS : float.PositiveInfinity;
+            float frameDt = Mathf.Min(Time.deltaTime * timeScale, maxDeltaTime);
+            float stepDt = frameDt / substeps;
+
+            for (int i = 0; i < substeps; i++)
+            {
+                SimulationStep(stepDt);
+            }
+
+            stepOneFrame = false;
         }
 
-        for (int i = 0; i < numberOfParticles; i++)
-        {
-            float speed = velocities[i].magnitude;
-            float t = Mathf.Clamp01(speed / maxVisualizedSpeed);
-            Color color = Color.Lerp(Color.blue, Color.red, t);
-
-            DrawCircle(positions[i], radius, color);
-        }
+        positionBuffer.SetData(positions);
+        velocityBuffer.SetData(velocities);
 
     }
-    void UpdateInput()
+    void HandleInput()
     {
         mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
 
         isPulling = Input.GetMouseButton(0);
         isPushing = Input.GetMouseButton(1);
+
+        if (Input.GetKeyDown(KeyCode.Space))
+            isPaused = !isPaused;
+
+        if (Input.GetKeyDown(KeyCode.RightArrow))
+            stepOneFrame = true;
     }
+
     void SimulationStep(float dt)
     {
         // Apply gravity and predict positions
         Parallel.For(0, numberOfParticles, i =>
         {
             velocities[i] += Vector2.down * gravity * dt;
-            predictedPositions[i] = positions[i] + velocities[i] * 1 / 120f;
+            predictedPositions[i] = positions[i] + velocities[i] * dt;
 
 
         });
@@ -242,7 +245,7 @@ public class Simulation : MonoBehaviour
         Parallel.For(0, numberOfParticles, i =>
         {
             Vector2 pressureForce = CalculatePressureForce(i);
-            Vector2 pressureAcceleration = pressureForce / densities[i];
+            Vector2 pressureAcceleration = pressureForce / densities[i].Item1;
             velocities[i] += pressureAcceleration * dt;
 
         });
@@ -259,7 +262,6 @@ public class Simulation : MonoBehaviour
         // Update positions and collisions
         Parallel.For(0, numberOfParticles, i =>
         {
-
             positions[i] += velocities[i] * dt;
             ResolveCollisions(ref positions[i], ref velocities[i]);
         });
@@ -316,11 +318,36 @@ public class Simulation : MonoBehaviour
         float value = Mathf.Max(0, radius * radius - dst * dst);
         return value * value * value / volume;
     }
-    float CalculateSharedPressure(float densityA, float densityB)
+    float NearSmoothingKernel(float radius, float dst)
     {
-        float pressureA = ConvertDensityToPressure(densityA);
-        float pressureB = ConvertDensityToPressure(densityB);
-        return (pressureA + pressureB) / 2;
+        if (dst >= radius) return 0;
+        float volume = (Mathf.PI * Mathf.Pow(radius, 5)) / 10f;
+        return (radius - dst) * (radius - dst) * (radius - dst) / volume;
+    }
+    float NearSmoothingKernelDerivative(float radius, float dst)
+    {
+        if (dst >= radius) return 0;
+
+        float volume = Mathf.PI * Mathf.Pow(radius, 5) / 10f;
+        float value = radius - dst;
+
+        return -3f * value * value / volume;
+    }
+
+    (float pressure, float nearPressure) CalculateSharedPressure(
+     (float density, float nearDensity) densityA,
+     (float density, float nearDensity) densityB)
+    {
+        (float pressureA, float nearPressureA) =
+            ConvertDensityToPressure(densityA.density, densityA.nearDensity);
+
+        (float pressureB, float nearPressureB) =
+            ConvertDensityToPressure(densityB.density, densityB.nearDensity);
+
+        return (
+            (pressureA + pressureB) / 2f,
+            (nearPressureA + nearPressureB) / 2f
+        );
     }
 
     Vector2 CalculatePressureForce(int particleIndex)
@@ -339,11 +366,13 @@ public class Simulation : MonoBehaviour
             Vector2 dir = offset / dst;
 
             float slope = SmoothingKernelDerivative(smoothingRadius, dst);
+            float nearSlope = NearSmoothingKernelDerivative(smoothingRadius, dst);
+            (float density, float nearDensity) densityA = densities[particleIndex];
+            (float density, float nearDensity) densityB = densities[otherIndex];
 
-            float density = densities[otherIndex];
-            float sharedPressure = CalculateSharedPressure(density, densities[particleIndex]);
-
-            pressureForce += sharedPressure * dir * slope / density;
+            (float sharedPressure, float sharedNearPressure) =
+                CalculateSharedPressure(densityA, densityB);
+            pressureForce += (sharedPressure * slope + sharedNearPressure * nearSlope) * dir / densityB.density;
         });
 
         return pressureForce;
@@ -351,10 +380,10 @@ public class Simulation : MonoBehaviour
     Vector2 CalculateViscosityForce(int particleIndex)
     {
         Vector2 viscosityForce = Vector2.zero;
-        Vector2 position = positions[particleIndex];
+        Vector2 position = predictedPositions[particleIndex];
         ForEachPointWithinRadius(position, otherIndex =>
         {
-            float dst = (position - positions[otherIndex]).magnitude;
+            float dst = (position - predictedPositions[otherIndex]).magnitude;
             float influence = ViscositySmoothKernel(smoothingRadius, dst);
             viscosityForce += (velocities[otherIndex] - velocities[particleIndex]) * influence;
         });
@@ -375,23 +404,27 @@ public class Simulation : MonoBehaviour
         }
         return interactionForce;
     }
-    float CalculateDensity(Vector2 samplePoint)
+    (float, float) CalculateDensity(Vector2 samplePoint)
     {
         float density = 0;
+        float nearDensity = 0;
         const float mass = 1;
         ForEachPointWithinRadius(samplePoint, particleIndex =>
         {
             float dst = (predictedPositions[particleIndex] - samplePoint).magnitude;
             float influence = SmoothingKernel(smoothingRadius, dst);
+            float nearInfluence = NearSmoothingKernel(smoothingRadius, dst);
             density += mass * influence;
+            nearDensity += mass * nearInfluence;
         });
-        return density;
+        return (density, nearDensity);
     }
-    float ConvertDensityToPressure(float density)
+    (float, float) ConvertDensityToPressure(float density, float nearDensity)
     {
         float densityError = density - targetDensity;
         float pressure = densityError * pressureMultiplier;
-        return pressure;
+        float nearPressure = nearDensity * nearPressureMultiplier;
+        return (pressure, nearPressure);
     }
     void OnDrawGizmos()
     {
@@ -413,5 +446,10 @@ public class Simulation : MonoBehaviour
         }
 
     }
+    void OnDestroy()
+    {
+        positionBuffer?.Release();
+        velocityBuffer?.Release();
 
+    }
 }

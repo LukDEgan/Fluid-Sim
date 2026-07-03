@@ -266,7 +266,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1934829022}
   - component: {fileID: 1934829021}
-  - component: {fileID: 1934829023}
+  - component: {fileID: 1934829024}
   m_Layer: 0
   m_Name: Simulation
   m_TagString: Untagged
@@ -286,9 +286,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f42c90405fabe6540bb5ed157cff743e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Simulation
-  numberOfParticles: 3500
-  targetDensity: 3
-  pressureMultiplier: 30
+  numberOfParticles: 4000
+  targetDensity: 15
+  pressureMultiplier: 25
   particleSpacing: 0.01
   radius: 0.05
   gravity: 0
@@ -296,7 +296,7 @@ MonoBehaviour:
   smoothingRadius: 0.5
   boundsSize: {x: 14.9, y: 9.3}
   substeps: 5
-  viscosityStrength: 0.5
+  viscosityStrength: 2
 --- !u!4 &1934829022
 Transform:
   m_ObjectHideFlags: 0
@@ -312,7 +312,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1934829023
+--- !u!114 &1934829024
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -321,9 +321,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 1934829020}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 876c4dfb25899b04cb94b9ce7001864d, type: 3}
+  m_Script: {fileID: 11500000, guid: 39011c2679b0b6843ba032ee7969623e, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ParticleRender
+  m_EditorClassIdentifier: Assembly-CSharp::ParticleDisplay
+  sim: {fileID: 1934829021}
+  mesh: {fileID: 10210, guid: 0000000000000000e000000000000000, type: 0}
+  shader: {fileID: 4800000, guid: 37b9aaeecdc7b5043a5161bd07e0916b, type: 3}
+  scale: 0.08
+  velocityDisplayMax: 5
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
