@@ -286,17 +286,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f42c90405fabe6540bb5ed157cff743e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Simulation
-  numberOfParticles: 4000
-  targetDensity: 15
-  pressureMultiplier: 25
+  timeScale: 1
+  maxTimestepFPS: 60
+  substeps: 2
+  numberOfParticles: 2000
+  pressureMultiplier: 300
+  nearPressureMultiplier: 15
+  viscosityStrength: 1
+  gravity: 10
+  targetDensity: 54
   particleSpacing: 0.01
   radius: 0.05
-  gravity: 0
   collisionDamping: 0.95
-  smoothingRadius: 0.5
-  boundsSize: {x: 14.9, y: 9.3}
-  substeps: 5
-  viscosityStrength: 2
+  smoothingRadius: 0.4
+  boundsSize: {x: 17.43, y: 9.45}
+  interactionRadius: 2
+  interactionStrength: 70
 --- !u!4 &1934829022
 Transform:
   m_ObjectHideFlags: 0
@@ -329,6 +334,36 @@ MonoBehaviour:
   shader: {fileID: 4800000, guid: 37b9aaeecdc7b5043a5161bd07e0916b, type: 3}
   scale: 0.08
   velocityDisplayMax: 5
+  colourMap:
+    serializedVersion: 2
+    key0: {r: 0.13082945, g: 0.16501646, b: 0.7924528, a: 1}
+    key1: {r: 0.16197933, g: 0.9811321, b: 0.63529146, a: 1}
+    key2: {r: 1, g: 0.8928898, b: 0.3066038, a: 0}
+    key3: {r: 1, g: 0.36825848, b: 0.033018887, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 3662
+    ctime1: 31611
+    ctime2: 48380
+    ctime3: 65150
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: 0
+    m_NumColorKeys: 4
+    m_NumAlphaKeys: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

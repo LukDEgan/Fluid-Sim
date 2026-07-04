@@ -1,0 +1,50 @@
+// Each #kernel tells which function to compile; you can have many kernels
+
+#pragma kernel ApplyGravityAndMove
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+
+//buffers
+RWStructuredBuffer<float2> Positions;
+RWStructuredBuffer<float2> Velocities;
+
+
+// settings
+const uint numParticles;
+const float gravity;
+const float deltaTime;
+const float collisionDamping;
+const float smoothingRadius;
+const float targetDensity;
+const float pressureMultiplier;
+const float nearPressureMultiplier;
+const float viscosityStrength;
+const float2 boundsSize;
+const float2 interactionInputPoint;
+const float interactionInputStrength;
+const float interactionInputRadius;
+
+[numthreads(256,1,1)]
+void ApplyGravityAndMove(uint id : SV_DispatchThreadID){
+    if(id >= numParticles) return;
+
+    float2 pos = Positions[id];
+    float2 vel = Velocities[id];
+
+    vel += float2(0,-gravity) * deltaTime;
+    pos += vel * deltaTime;
+
+    float2 halfSize = boundsSize * 0.5;
+    float2 edgeDst = halfSize - abs(pos);
+    if(edgeDst.x <= 0) {
+        pos.x = halfSize.x * sign(pos.x);
+        vel.x *= -collisionDamping;
+    }
+    if(edgeDst.y <= 0) {
+        pos.y = halfSize.y * sign(pos.y);
+        vel.y *= -collisionDamping;
+    }
+
+    Positions[id] = pos;
+    Velocities[id] = vel;
+}

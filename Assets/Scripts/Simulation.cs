@@ -23,17 +23,21 @@ public class Simulation : MonoBehaviour
     public float targetDensity;
     public float particleSpacing;
     public float radius;
-    [Range(0, 1)] public float collisionDamping = 0.95f;
+    [Range(0, 1)]
+    public float collisionDamping = 0.95f;
     public float smoothingRadius;
     public Vector2 boundsSize;
 
     [Header("Interaction Settings")]
     public float interactionRadius = 2f;
     public float interactionStrength = 50f;
+
+    [Header("Dependencies")]
+    public ComputeShader simCompute;
     bool isPaused;
 
     bool stepOneFrame;
-
+    int threadGroupSize = 256;
 
     Vector2[] positions;
     Vector2[] velocities;
@@ -47,7 +51,7 @@ public class Simulation : MonoBehaviour
     bool isPushing;
 
 
-
+    int applyGravityCollisionsKernel;
     (int x, int y)[] cellOffSets =
   {
     (-1, -1), (0, -1), (1, -1),
@@ -179,11 +183,26 @@ public class Simulation : MonoBehaviour
         velocityBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
 
 
+
         positionBuffer.SetData(positions);
         velocityBuffer.SetData(velocities);
+        applyGravityCollisionsKernel = simCompute.FindKernel("ApplyGravityAndMove");
+        simCompute.SetBuffer(applyGravityCollisionsKernel, "Positions", positionBuffer);
+        simCompute.SetBuffer(applyGravityCollisionsKernel, "Velocities", velocityBuffer);
 
     }
+    void SimulationStepGPU(float dt)
+    {
+        simCompute.SetInt("numParticles", numberOfParticles);
+        simCompute.SetFloat("deltaTime", dt);
+        simCompute.SetFloat("gravity", gravity);
+        simCompute.SetFloat("collisionDamping", collisionDamping);
+        simCompute.SetFloat("particleRadius", radius);
+        simCompute.SetVector("boundsSize", boundsSize);
 
+        int groups = Mathf.CeilToInt(numberOfParticles / (float)threadGroupSize);
+        simCompute.Dispatch(applyGravityCollisionsKernel, groups, 1, 1);
+    }
     // Update is called once per frame
     void Update()
     {
@@ -199,14 +218,14 @@ public class Simulation : MonoBehaviour
 
             for (int i = 0; i < substeps; i++)
             {
-                SimulationStep(stepDt);
+                SimulationStepGPU(stepDt);
             }
 
             stepOneFrame = false;
         }
 
-        positionBuffer.SetData(positions);
-        velocityBuffer.SetData(velocities);
+        //positionBuffer.SetData(positions);
+        //velocityBuffer.SetData(velocities);
 
     }
     void HandleInput()
