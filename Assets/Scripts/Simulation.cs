@@ -1,6 +1,6 @@
 
 using System;
-
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 using UnityEngine;
@@ -51,7 +51,9 @@ public class Simulation : MonoBehaviour
     bool isPushing;
 
 
-    int applyGravityCollisionsKernel;
+    int externalForcesKernel;
+    int densityKernel;
+    int updatePositionKernel;
     (int x, int y)[] cellOffSets =
   {
     (-1, -1), (0, -1), (1, -1),
@@ -61,6 +63,7 @@ public class Simulation : MonoBehaviour
     // Buffers
     public ComputeBuffer positionBuffer { get; private set; }
     public ComputeBuffer velocityBuffer { get; private set; }
+    ComputeBuffer predictedPositionBuffer;
     public struct Entry : IComparable<Entry>
     {
         public int particleIndex;
@@ -179,16 +182,24 @@ public class Simulation : MonoBehaviour
     {
         float deltaTime = 1 / 60f;
         Time.fixedDeltaTime = deltaTime;
+
         positionBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
+        predictedPositionBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
         velocityBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
-
-
 
         positionBuffer.SetData(positions);
         velocityBuffer.SetData(velocities);
-        applyGravityCollisionsKernel = simCompute.FindKernel("ApplyGravityAndMove");
-        simCompute.SetBuffer(applyGravityCollisionsKernel, "Positions", positionBuffer);
-        simCompute.SetBuffer(applyGravityCollisionsKernel, "Velocities", velocityBuffer);
+        predictedPositionBuffer.SetData(predictedPositions);
+
+        externalForcesKernel = simCompute.FindKernel("ExternalForces");
+        updatePositionKernel = simCompute.FindKernel("UpdatePositions");
+
+        simCompute.SetBuffer(externalForcesKernel, "Positions", positionBuffer);
+        simCompute.SetBuffer(externalForcesKernel, "Velocities", velocityBuffer);
+        simCompute.SetBuffer(externalForcesKernel, "PredictedPositions", predictedPositionBuffer);
+
+        simCompute.SetBuffer(updatePositionKernel, "Positions", positionBuffer);
+        simCompute.SetBuffer(updatePositionKernel, "Velocities", velocityBuffer);
 
     }
     void SimulationStepGPU(float dt)
@@ -201,7 +212,8 @@ public class Simulation : MonoBehaviour
         simCompute.SetVector("boundsSize", boundsSize);
 
         int groups = Mathf.CeilToInt(numberOfParticles / (float)threadGroupSize);
-        simCompute.Dispatch(applyGravityCollisionsKernel, groups, 1, 1);
+        simCompute.Dispatch(externalForcesKernel, groups, 1, 1);
+        simCompute.Dispatch(updatePositionKernel, groups, 1, 1);
     }
     // Update is called once per frame
     void Update()

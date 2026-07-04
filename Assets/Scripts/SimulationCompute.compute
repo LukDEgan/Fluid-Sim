@@ -1,50 +1,128 @@
-// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel ExternalForces
+#pragma kernel CalculateDensities
+#pragma kernel UpdatePositions
 
-#pragma kernel ApplyGravityAndMove
-// Create a RenderTexture with enableRandomWrite flag and set it
-// with cs.SetTexture
-
-//buffers
 RWStructuredBuffer<float2> Positions;
 RWStructuredBuffer<float2> Velocities;
+RWStructuredBuffer<float2> PredictedPositions;
+RWStructuredBuffer<float2> Densities;
+
+static const int numThreads = 256;
+
+uint numParticles;
+float gravity;
+float deltaTime;
+float collisionDamping;
+float smoothingRadius;
+float targetDensity;
+float pressureMultiplier;
+float nearPressureMultiplier;
+float viscosityStrength;
+float2 boundsSize;
+float2 interactionInputPoint;
+float interactionInputStrength;
+float interactionInputRadius;
+
+float DensityKernel(float radius, float dst)
+{
+    if (dst >= radius) return 0;
+
+    float v = radius - dst;
+    float r2 = radius * radius;
+    float r4 = r2 * r2;
+    float volume = 3.14159265 * r4 / 6.0;
+
+    return v * v / volume;
+}
+
+float NearDensityKernel(float radius, float dst)
+{
+    if (dst >= radius) return 0;
+
+    float v = radius - dst;
+    float r2 = radius * radius;
+    float r4 = r2 * r2;
+    float r5 = r4 * radius;
+    float volume = 3.14159265 * r5 / 10.0;
+
+    return v * v * v / volume;
+}
 
 
-// settings
-const uint numParticles;
-const float gravity;
-const float deltaTime;
-const float collisionDamping;
-const float smoothingRadius;
-const float targetDensity;
-const float pressureMultiplier;
-const float nearPressureMultiplier;
-const float viscosityStrength;
-const float2 boundsSize;
-const float2 interactionInputPoint;
-const float interactionInputStrength;
-const float interactionInputRadius;
 
-[numthreads(256,1,1)]
-void ApplyGravityAndMove(uint id : SV_DispatchThreadID){
+[numthreads(numThreads, 1, 1)]
+void ExternalForces(uint id : SV_DispatchThreadID)
+{
+    if (id >= numParticles) return;
+
+    
+    Velocities[id] += float2(0,-gravity) * deltaTime;
+
+    const float predictionFactor = 1 / 120.0;
+	PredictedPositions[id] = Positions[id] + Velocities[id] * predictionFactor;
+}
+
+void HandleCollisions(uint particleIndex){
+    float2 pos = Positions[particleIndex];
+	float2 vel = Velocities[particleIndex];
+
+	// Keep particle inside bounds
+	const float2 halfSize = boundsSize * 0.5;
+	float2 edgeDst = halfSize - abs(pos);
+
+	if (edgeDst.x <= 0)
+	{
+		pos.x = halfSize.x * sign(pos.x);
+		vel.x *= -1 * collisionDamping;
+	}
+	if (edgeDst.y <= 0)
+	{
+		pos.y = halfSize.y * sign(pos.y);
+		vel.y *= -1 * collisionDamping;
+	}
+    Positions[particleIndex] = pos;
+	Velocities[particleIndex] = vel;
+}
+
+float2 CalculateDensity(float2 pos, uint selfIndex)
+{
+    float density = 0;
+    float nearDensity = 0;
+    float sqrRadius = smoothingRadius * smoothingRadius;
+
+    for (uint i = 0; i < numParticles; i++)
+    {
+        if (i == selfIndex) continue;
+
+        float2 otherParticlePos = PredictedPositions[i];
+
+        float2 offset = otherParticlePos - pos;
+        float sqrDst = dot(offset, offset);
+
+        if (sqrDst > sqrRadius) continue;
+
+        float dst = sqrt(sqrDst);
+
+        density += DensityKernel(smoothingRadius, dst);
+        nearDensity += NearDensityKernel(smoothingRadius, dst);
+    }
+
+    return float2(density, nearDensity);
+}
+
+[numthreads(numThreads, 1, 1)]
+void CalculateDensities(uint id : SV_DispatchThreadID)
+{
+    if (id >= numParticles) return;
+
+    float2 pos = PredictedPositions[id];
+    Densities[id] = CalculateDensity(pos, id);
+}
+
+[numthreads(numThreads, 1,1)]
+void UpdatePositions(uint id : SV_DispatchThreadID){
     if(id >= numParticles) return;
 
-    float2 pos = Positions[id];
-    float2 vel = Velocities[id];
-
-    vel += float2(0,-gravity) * deltaTime;
-    pos += vel * deltaTime;
-
-    float2 halfSize = boundsSize * 0.5;
-    float2 edgeDst = halfSize - abs(pos);
-    if(edgeDst.x <= 0) {
-        pos.x = halfSize.x * sign(pos.x);
-        vel.x *= -collisionDamping;
-    }
-    if(edgeDst.y <= 0) {
-        pos.y = halfSize.y * sign(pos.y);
-        vel.y *= -collisionDamping;
-    }
-
-    Positions[id] = pos;
-    Velocities[id] = vel;
+    Positions[id] += Velocities[id] *deltaTime;
+    HandleCollisions(id);
 }
