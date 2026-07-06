@@ -289,19 +289,20 @@ MonoBehaviour:
   timeScale: 1
   maxTimestepFPS: 60
   substeps: 2
-  numberOfParticles: 2000
-  pressureMultiplier: 300
+  numberOfParticles: 8000
+  pressureMultiplier: 400
   nearPressureMultiplier: 15
   viscosityStrength: 1
   gravity: 10
   targetDensity: 54
   particleSpacing: 0.01
-  radius: 0.05
+  particleRadius: 0.04
   collisionDamping: 0.95
   smoothingRadius: 0.4
   boundsSize: {x: 17.43, y: 9.45}
   interactionRadius: 2
   interactionStrength: 70
+  simCompute: {fileID: 7200000, guid: 600078580b6fae340a21afdcf23eeab4, type: 3}
 --- !u!4 &1934829022
 Transform:
   m_ObjectHideFlags: 0

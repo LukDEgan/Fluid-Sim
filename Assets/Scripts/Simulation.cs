@@ -22,7 +22,7 @@ public class Simulation : MonoBehaviour
     public float gravity;
     public float targetDensity;
     public float particleSpacing;
-    public float radius;
+    public float particleRadius;
     [Range(0, 1)]
     public float collisionDamping = 0.95f;
     public float smoothingRadius;
@@ -35,35 +35,37 @@ public class Simulation : MonoBehaviour
     [Header("Dependencies")]
     public ComputeShader simCompute;
     bool isPaused;
-
     bool stepOneFrame;
     int threadGroupSize = 256;
-
     Vector2[] positions;
     Vector2[] velocities;
     Entry[] spatialLookup;
     int[] startIndices;
     Vector2[] predictedPositions;
-
-    (float, float)[] densities; // density and near density
-    Vector2 mousePosition;
-    bool isPulling;
-    bool isPushing;
-
-
+    Vector2[] densities; // density and near density
     int externalForcesKernel;
-    int densityKernel;
-    int updatePositionKernel;
+    int calculateDensitiesKernel;
+    int calculatePressureForceKernel;
+    int CalculateViscosityForceKernel;
+    int updatePositionKernelKernel;
+
+
+
+
     (int x, int y)[] cellOffSets =
   {
     (-1, -1), (0, -1), (1, -1),
     (-1,  0), (0,  0), (1,  0),
     (-1,  1), (0,  1), (1,  1)
 };
+
+
     // Buffers
     public ComputeBuffer positionBuffer { get; private set; }
     public ComputeBuffer velocityBuffer { get; private set; }
+    public ComputeBuffer densitiesBuffer { get; private set; }
     ComputeBuffer predictedPositionBuffer;
+
     public struct Entry : IComparable<Entry>
     {
         public int particleIndex;
@@ -80,6 +82,10 @@ public class Simulation : MonoBehaviour
             return cellKey.CompareTo(other.cellKey);
         }
     }
+
+
+
+
     public void UpdateSpatialLookup(Vector2[] points)
     {
 
@@ -149,7 +155,7 @@ public class Simulation : MonoBehaviour
     void SpawnUniformParticles()
     {
 
-        densities = new (float, float)[numberOfParticles];
+        densities = new Vector2[numberOfParticles];
         positions = new Vector2[numberOfParticles];
         velocities = new Vector2[numberOfParticles];
         predictedPositions = new Vector2[numberOfParticles];
@@ -158,7 +164,7 @@ public class Simulation : MonoBehaviour
 
         int particlesPerRow = (int)Math.Sqrt(numberOfParticles);
         int particlesPerCol = (numberOfParticles - 1) / particlesPerRow + 1;
-        float spacing = radius * 2 + particleSpacing;
+        float spacing = particleRadius * 2 + particleSpacing;
 
         for (int i = 0; i < numberOfParticles; i++)
         {
@@ -184,36 +190,50 @@ public class Simulation : MonoBehaviour
         Time.fixedDeltaTime = deltaTime;
 
         positionBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
+        densitiesBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
         predictedPositionBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
         velocityBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
 
         positionBuffer.SetData(positions);
         velocityBuffer.SetData(velocities);
         predictedPositionBuffer.SetData(predictedPositions);
+        densitiesBuffer.SetData(densities);
 
         externalForcesKernel = simCompute.FindKernel("ExternalForces");
-        updatePositionKernel = simCompute.FindKernel("UpdatePositions");
+        calculateDensitiesKernel = simCompute.FindKernel("CalculateDensities");
+        calculatePressureForceKernel = simCompute.FindKernel("CalculatePressureForce");
+        CalculateViscosityForceKernel = simCompute.FindKernel("CalculateViscosityForce");
+        updatePositionKernelKernel = simCompute.FindKernel("UpdatePositions");
 
         simCompute.SetBuffer(externalForcesKernel, "Positions", positionBuffer);
         simCompute.SetBuffer(externalForcesKernel, "Velocities", velocityBuffer);
         simCompute.SetBuffer(externalForcesKernel, "PredictedPositions", predictedPositionBuffer);
 
-        simCompute.SetBuffer(updatePositionKernel, "Positions", positionBuffer);
-        simCompute.SetBuffer(updatePositionKernel, "Velocities", velocityBuffer);
+        simCompute.SetBuffer(calculateDensitiesKernel, "Densities", densitiesBuffer);
+        simCompute.SetBuffer(calculateDensitiesKernel, "PredictedPositions", predictedPositionBuffer);
+
+        simCompute.SetBuffer(calculatePressureForceKernel, "Densities", densitiesBuffer);
+        simCompute.SetBuffer(calculatePressureForceKernel, "PredictedPositions", predictedPositionBuffer);
+        simCompute.SetBuffer(calculatePressureForceKernel, "Velocities", velocityBuffer);
+
+        simCompute.SetBuffer(CalculateViscosityForceKernel, "PredictedPositions", predictedPositionBuffer);
+        simCompute.SetBuffer(CalculateViscosityForceKernel, "Velocities", velocityBuffer);
+
+        simCompute.SetBuffer(updatePositionKernelKernel, "Positions", positionBuffer);
+        simCompute.SetBuffer(updatePositionKernelKernel, "Velocities", velocityBuffer);
 
     }
     void SimulationStepGPU(float dt)
     {
-        simCompute.SetInt("numParticles", numberOfParticles);
-        simCompute.SetFloat("deltaTime", dt);
-        simCompute.SetFloat("gravity", gravity);
-        simCompute.SetFloat("collisionDamping", collisionDamping);
-        simCompute.SetFloat("particleRadius", radius);
-        simCompute.SetVector("boundsSize", boundsSize);
+
+
 
         int groups = Mathf.CeilToInt(numberOfParticles / (float)threadGroupSize);
         simCompute.Dispatch(externalForcesKernel, groups, 1, 1);
-        simCompute.Dispatch(updatePositionKernel, groups, 1, 1);
+        simCompute.Dispatch(calculateDensitiesKernel, groups, 1, 1);
+        simCompute.Dispatch(calculatePressureForceKernel, groups, 1, 1);
+        simCompute.Dispatch(CalculateViscosityForceKernel, groups, 1, 1);
+        simCompute.Dispatch(updatePositionKernelKernel, groups, 1, 1);
     }
     // Update is called once per frame
     void Update()
@@ -230,23 +250,43 @@ public class Simulation : MonoBehaviour
 
             for (int i = 0; i < substeps; i++)
             {
+                UpdateSettings(stepDt);
                 SimulationStepGPU(stepDt);
             }
 
             stepOneFrame = false;
         }
 
-        //positionBuffer.SetData(positions);
-        //velocityBuffer.SetData(velocities);
 
+    }
+    void UpdateSettings(float dt)
+    {
+        simCompute.SetInt("numParticles", numberOfParticles);
+        simCompute.SetFloat("deltaTime", dt);
+        simCompute.SetFloat("gravity", gravity);
+        simCompute.SetFloat("collisionDamping", collisionDamping);
+        simCompute.SetFloat("smoothingRadius", smoothingRadius);
+        simCompute.SetFloat("targetDensity", targetDensity);
+        simCompute.SetFloat("pressureMultiplier", pressureMultiplier);
+        simCompute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
+        simCompute.SetFloat("viscosityStrength", viscosityStrength);
+        simCompute.SetVector("boundsSize", boundsSize);
+
+        Vector2 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        bool isPullInteraction = Input.GetMouseButton(0);
+        bool isPushInteraction = Input.GetMouseButton(1);
+        float currInteractStrength = 0;
+        if (isPushInteraction || isPullInteraction)
+        {
+            currInteractStrength = isPushInteraction ? -interactionStrength : interactionStrength;
+        }
+
+        simCompute.SetVector("interactionPoint", mousePos);
+        simCompute.SetFloat("interactionStrength", currInteractStrength);
+        simCompute.SetFloat("interactionRadius", interactionRadius);
     }
     void HandleInput()
     {
-        mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-
-        isPulling = Input.GetMouseButton(0);
-        isPushing = Input.GetMouseButton(1);
-
         if (Input.GetKeyDown(KeyCode.Space))
             isPaused = !isPaused;
 
@@ -254,209 +294,6 @@ public class Simulation : MonoBehaviour
             stepOneFrame = true;
     }
 
-    void SimulationStep(float dt)
-    {
-        // Apply gravity and predict positions
-        Parallel.For(0, numberOfParticles, i =>
-        {
-            velocities[i] += Vector2.down * gravity * dt;
-            predictedPositions[i] = positions[i] + velocities[i] * dt;
-
-
-        });
-
-        UpdateSpatialLookup(predictedPositions);
-        // Calculate densities from predicted positions
-        Parallel.For(0, numberOfParticles, i =>
-        {
-            densities[i] = CalculateDensity(predictedPositions[i]);
-        });
-
-        // Apply pressure forces
-        Parallel.For(0, numberOfParticles, i =>
-        {
-            Vector2 pressureForce = CalculatePressureForce(i);
-            Vector2 pressureAcceleration = pressureForce / densities[i].Item1;
-            velocities[i] += pressureAcceleration * dt;
-
-        });
-        Parallel.For(0, numberOfParticles, i =>
-        {
-            Vector2 viscosityForce = CalculateViscosityForce(i);
-            velocities[i] += viscosityForce * dt;
-        });
-        if (isPulling || isPushing)
-        {
-            ApplyInteraction(dt);
-        }
-
-        // Update positions and collisions
-        Parallel.For(0, numberOfParticles, i =>
-        {
-            positions[i] += velocities[i] * dt;
-            ResolveCollisions(ref positions[i], ref velocities[i]);
-        });
-    }
-
-    void ResolveCollisions(ref Vector2 position, ref Vector2 velocity)
-    {
-        Vector2 halfBoundsSize = boundsSize / 2 - Vector2.one * radius;
-        if (Mathf.Abs(position.x) > halfBoundsSize.x)
-        {
-            position.x = halfBoundsSize.x * Mathf.Sign(position.x);
-            velocity.x *= -1 * collisionDamping;
-        }
-        if (Mathf.Abs(position.y) > halfBoundsSize.y)
-        {
-            position.y = halfBoundsSize.y * Mathf.Sign(position.y);
-            velocity.y *= -1 * collisionDamping;
-        }
-    }
-    void ApplyInteraction(float dt)
-    {
-
-        float strength = isPulling
-            ? interactionStrength
-            : -interactionStrength;
-
-        Parallel.For(0, numberOfParticles, i =>
-        {
-            velocities[i] += InteractionForce(
-                mousePosition,
-                interactionRadius,
-                strength,
-                i) * dt;
-        });
-    }
-
-    float SmoothingKernel(float radius, float dst)
-    {
-        if (dst >= radius) return 0;
-        float volume = (Mathf.PI * Mathf.Pow(radius, 4)) / 6;
-        return (radius - dst) * (radius - dst) / volume;
-    }
-    float SmoothingKernelDerivative(float radius, float dst)
-    {
-        if (dst >= radius) return 0;
-
-        float scale = 12 / (Mathf.PI * Mathf.Pow(radius, 4));
-        return (dst - radius) * scale;
-    }
-    float ViscositySmoothKernel(float radius, float dst)
-    {
-        if (dst >= radius) return 0;
-        float volume = (Mathf.PI * Mathf.Pow(radius, 4)) / 6;
-        float value = Mathf.Max(0, radius * radius - dst * dst);
-        return value * value * value / volume;
-    }
-    float NearSmoothingKernel(float radius, float dst)
-    {
-        if (dst >= radius) return 0;
-        float volume = (Mathf.PI * Mathf.Pow(radius, 5)) / 10f;
-        return (radius - dst) * (radius - dst) * (radius - dst) / volume;
-    }
-    float NearSmoothingKernelDerivative(float radius, float dst)
-    {
-        if (dst >= radius) return 0;
-
-        float volume = Mathf.PI * Mathf.Pow(radius, 5) / 10f;
-        float value = radius - dst;
-
-        return -3f * value * value / volume;
-    }
-
-    (float pressure, float nearPressure) CalculateSharedPressure(
-     (float density, float nearDensity) densityA,
-     (float density, float nearDensity) densityB)
-    {
-        (float pressureA, float nearPressureA) =
-            ConvertDensityToPressure(densityA.density, densityA.nearDensity);
-
-        (float pressureB, float nearPressureB) =
-            ConvertDensityToPressure(densityB.density, densityB.nearDensity);
-
-        return (
-            (pressureA + pressureB) / 2f,
-            (nearPressureA + nearPressureB) / 2f
-        );
-    }
-
-    Vector2 CalculatePressureForce(int particleIndex)
-    {
-        Vector2 pressureForce = Vector2.zero;
-
-        ForEachPointWithinRadius(predictedPositions[particleIndex], otherIndex =>
-        {
-            if (particleIndex == otherIndex) return;
-
-            Vector2 offset = predictedPositions[otherIndex] - predictedPositions[particleIndex];
-            float dst = offset.magnitude;
-
-            if (dst == 0) return;
-
-            Vector2 dir = offset / dst;
-
-            float slope = SmoothingKernelDerivative(smoothingRadius, dst);
-            float nearSlope = NearSmoothingKernelDerivative(smoothingRadius, dst);
-            (float density, float nearDensity) densityA = densities[particleIndex];
-            (float density, float nearDensity) densityB = densities[otherIndex];
-
-            (float sharedPressure, float sharedNearPressure) =
-                CalculateSharedPressure(densityA, densityB);
-            pressureForce += (sharedPressure * slope + sharedNearPressure * nearSlope) * dir / densityB.density;
-        });
-
-        return pressureForce;
-    }
-    Vector2 CalculateViscosityForce(int particleIndex)
-    {
-        Vector2 viscosityForce = Vector2.zero;
-        Vector2 position = predictedPositions[particleIndex];
-        ForEachPointWithinRadius(position, otherIndex =>
-        {
-            float dst = (position - predictedPositions[otherIndex]).magnitude;
-            float influence = ViscositySmoothKernel(smoothingRadius, dst);
-            viscosityForce += (velocities[otherIndex] - velocities[particleIndex]) * influence;
-        });
-        return viscosityForce * viscosityStrength;
-    }
-    Vector2 InteractionForce(Vector2 inputPos, float radius, float strength, int particleIndex)
-    {
-        Vector2 interactionForce = Vector2.zero;
-        Vector2 offset = inputPos - positions[particleIndex];
-        float sqrDst = Vector2.Dot(offset, offset);
-
-        if (sqrDst < radius * radius)
-        {
-            float dst = Mathf.Sqrt(sqrDst);
-            Vector2 dirToInputPoint = dst <= float.Epsilon ? Vector2.zero : offset / dst;
-            float centreT = 1 - dst / radius;
-            interactionForce += (dirToInputPoint * strength - velocities[particleIndex]) * centreT;
-        }
-        return interactionForce;
-    }
-    (float, float) CalculateDensity(Vector2 samplePoint)
-    {
-        float density = 0;
-        float nearDensity = 0;
-        const float mass = 1;
-        ForEachPointWithinRadius(samplePoint, particleIndex =>
-        {
-            float dst = (predictedPositions[particleIndex] - samplePoint).magnitude;
-            float influence = SmoothingKernel(smoothingRadius, dst);
-            float nearInfluence = NearSmoothingKernel(smoothingRadius, dst);
-            density += mass * influence;
-            nearDensity += mass * nearInfluence;
-        });
-        return (density, nearDensity);
-    }
-    (float, float) ConvertDensityToPressure(float density, float nearDensity)
-    {
-        float densityError = density - targetDensity;
-        float pressure = densityError * pressureMultiplier;
-        float nearPressure = nearDensity * nearPressureMultiplier;
-        return (pressure, nearPressure);
-    }
     void OnDrawGizmos()
     {
         if (boundsSize != null)
@@ -481,6 +318,8 @@ public class Simulation : MonoBehaviour
     {
         positionBuffer?.Release();
         velocityBuffer?.Release();
+        densitiesBuffer?.Release();
+        predictedPositionBuffer?.Release();
 
     }
 }
