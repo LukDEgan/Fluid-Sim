@@ -131,6 +131,7 @@ GameObject:
   - component: {fileID: 519420031}
   - component: {fileID: 519420029}
   - component: {fileID: 519420030}
+  - component: {fileID: 519420033}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -249,13 +250,29 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 519420028}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.19082944, y: 0.07859168, z: -0.015329456, w: 0.97835195}
-  m_LocalPosition: {x: -2.82, y: 2.71, z: -6.97}
+  m_LocalRotation: {x: 0.19144283, y: 0, z: 0, w: 0.9815037}
+  m_LocalPosition: {x: 0, y: 2.71, z: -6.97}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 22.074, y: 9.186, z: 0}
+  m_LocalEulerAnglesHint: {x: 22.074, y: 0, z: 0}
+--- !u!114 &519420033
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 519420028}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aca967c21e46f1c4eb9d3368faed6fe5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::FitCameraToBounds3D
+  sim: {fileID: 1934829024}
+  padding: 1.2
+  viewDirection: {x: 0.35, y: 0.35, z: -1}
+  rotationSpeed: 60
 --- !u!1 &1900949579
 GameObject:
   m_ObjectHideFlags: 0
@@ -429,15 +446,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f2e05008f6821e94b979af61b41ec4d5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Spawner3D
-  spawnDensity: 300
+  spawnDensity: 500
   initialVelocity: {x: 0, y: 0, z: 0}
   jitterStrength: 0.06
   spawnRegions:
-  - position: {x: 2.74, y: 0, z: 0}
+  - position: {x: 1.47, y: 0, z: 0}
     size: {x: 3, y: 3, z: 3}
     debugColor: {r: 1, g: 0.24056602, b: 0.24056602, a: 1}
   showSpawnBoundsGizmos: 1
-  spawnParticleCount: 9261
+  spawnParticleCount: 13824
 --- !u!114 &1934829024
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -453,14 +470,14 @@ MonoBehaviour:
   timeScale: 1
   maxTimestepFPS: 60
   substeps: 2
-  pressureMultiplier: 20
-  nearPressureMultiplier: 1
-  viscosityStrength: 0.5
+  pressureMultiplier: 200
+  nearPressureMultiplier: 5
+  viscosityStrength: 0.01
   gravity: 10
-  targetDensity: 50
-  collisionDamping: 0.95
-  smoothingRadius: 0.6
-  boundsSize: {x: 9.62, y: 4, z: 5}
+  targetDensity: 400
+  collisionDamping: 0.8
+  smoothingRadius: 0.35
+  boundsSize: {x: 6.65, y: 4, z: 5}
   obstacleSize: {x: 0, y: 0, z: 0}
   obstacleCentre: {x: 0, y: 0, z: 0}
   interactionRadius: 2
