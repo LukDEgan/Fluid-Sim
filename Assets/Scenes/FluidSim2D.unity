@@ -267,6 +267,7 @@ GameObject:
   - component: {fileID: 1934829022}
   - component: {fileID: 1934829021}
   - component: {fileID: 1934829024}
+  - component: {fileID: 1934829025}
   m_Layer: 0
   m_Name: Simulation
   m_TagString: Untagged
@@ -289,20 +290,22 @@ MonoBehaviour:
   timeScale: 1
   maxTimestepFPS: 60
   substeps: 2
-  numberOfParticles: 8000
-  pressureMultiplier: 400
-  nearPressureMultiplier: 15
-  viscosityStrength: 1
+  pressureMultiplier: 300
+  nearPressureMultiplier: 20
+  viscosityStrength: 0.3
   gravity: 10
-  targetDensity: 54
+  targetDensity: 70
   particleSpacing: 0.01
   particleRadius: 0.04
-  collisionDamping: 0.95
+  collisionDamping: 0.5
   smoothingRadius: 0.4
-  boundsSize: {x: 17.43, y: 9.45}
+  boundsSize: {x: 16.8, y: 9.45}
+  obstacleSize: {x: 2.26, y: 6.12}
+  obstacleCentre: {x: 0.27, y: -1}
   interactionRadius: 2
-  interactionStrength: 70
+  interactionStrength: 90
   simCompute: {fileID: 7200000, guid: 600078580b6fae340a21afdcf23eeab4, type: 3}
+  spawner: {fileID: 1934829025}
 --- !u!4 &1934829022
 Transform:
   m_ObjectHideFlags: 0
@@ -333,7 +336,7 @@ MonoBehaviour:
   sim: {fileID: 1934829021}
   mesh: {fileID: 10210, guid: 0000000000000000e000000000000000, type: 0}
   shader: {fileID: 4800000, guid: 37b9aaeecdc7b5043a5161bd07e0916b, type: 3}
-  scale: 0.08
+  scale: 0.05
   velocityDisplayMax: 5
   colourMap:
     serializedVersion: 2
@@ -365,6 +368,30 @@ MonoBehaviour:
     m_ColorSpace: 0
     m_NumColorKeys: 4
     m_NumAlphaKeys: 2
+--- !u!114 &1934829025
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1934829020}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c02a2f3432c14a84b933b0f75f10c50c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Spawner
+  spawnDensity: 100
+  initialVelocity: {x: 0, y: 0}
+  jitterStrength: 0.03
+  spawnRegions:
+  - position: {x: 6.84, y: 0}
+    size: {x: 2.37, y: 8.14}
+    debugColor: {r: 0.8396226, g: 0, b: 0, a: 1}
+  - position: {x: -6.09, y: 0}
+    size: {x: 2.8, y: 8.14}
+    debugColor: {r: 0.8396226, g: 0, b: 0, a: 1}
+  showSpawnBoundsGizmos: 1
+  spawnParticleCount: 4346
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

@@ -4,12 +4,14 @@
 #pragma kernel CalculateViscosityForce
 #pragma kernel UpdatePositions
 
+
 RWStructuredBuffer<float2> Positions;
 RWStructuredBuffer<float2> Velocities;
 RWStructuredBuffer<float2> PredictedPositions;
 RWStructuredBuffer<float2> Densities;
 
 static const int numThreads = 256;
+static const float PI = 3.14159265;
 
 uint numParticles;
 float gravity;
@@ -24,61 +26,46 @@ float2 boundsSize;
 float2 interactionPoint;
 float interactionStrength;
 float interactionRadius;
+float2 obstacleSize;
+float2 obstacleCentre;
 
 float DensityKernel(float radius, float dst)
 {
     if (dst >= radius) return 0;
-
     float v = radius - dst;
-    float r2 = radius * radius;
-    float r4 = r2 * r2;
-    float volume = 3.14159265 * r4 / 6.0;
-
-    return v * v / volume;
+    return v * v * 6 / (PI * pow(smoothingRadius, 4));
 }
 float DensityDerivativeKernel(float radius, float dst)
 {
-    if (dst >= radius) return 0;
-
-    float v = dst - radius;
-    float r2 = radius * radius;
-    float r4 = r2 * r2;
-    float scale = 12.0 / (3.14159265 * r4);
-
-    return v * scale;
+   if (dst <= radius)
+	{
+		float v = radius - dst;
+		return -v * 12 / (pow(smoothingRadius, 4) * PI);
+	}
+	return 0;
 }
 float NearDensityKernel(float radius, float dst)
 {
     if (dst >= radius) return 0;
-
     float v = radius - dst;
-    float r2 = radius * radius;
-    float r4 = r2 * r2;
-    float r5 = r4 * radius;
-    float volume = 3.14159265 * r5 / 10.0;
-
-    return v * v * v / volume;
+    return v * v *  10 / (PI * pow(smoothingRadius, 5));
 }
 float NearDensityDerivativeKernel(float radius, float dst)
 {
-    if (dst >= radius) return 0;
-
-    float v = radius - dst;
-    float r2 = radius * radius;
-    float r4 = r2 * r2;
-    float r5 = r4 * radius;
-    float volume = 3.14159265 * r5 / 10.0;
-
-    return -3.0 * v * v / volume;
+    if (dst <= radius)
+	{
+		float v = radius - dst;
+		return -v * v *  30 / (pow(smoothingRadius, 5) * PI);
+	}
+	return 0;
 }
 float ViscositySmoothingKernel(float radius, float dst){
-    if(dst >= radius) return 0;
-    float v = radius * radius - dst * dst;
-    float r2 = radius * radius;
-    float r4 = r2 * r2;
-    float volume = 3.14159265 * r4 / 6.0;
-
-    return v * v * v / volume;
+    if (dst < radius)
+	{
+		float v = radius * radius - dst * dst;
+		return v * v * v * 4 / (PI * pow(smoothingRadius, 8));
+	}
+	return 0;
 }
 void HandleCollisions(uint particleIndex)
 {
@@ -98,6 +85,20 @@ void HandleCollisions(uint particleIndex)
 	{
 		pos.y = halfSize.y * sign(pos.y);
 		vel.y *= -1 * collisionDamping;
+	}
+    const float2 obstacleHalfSize = obstacleSize * 0.5;
+	float2 obstacleEdgeDst = obstacleHalfSize - abs(pos - obstacleCentre);
+
+	if (obstacleEdgeDst.x >= 0 && obstacleEdgeDst.y >= 0)
+	{
+		if (obstacleEdgeDst.x < obstacleEdgeDst.y) {
+			pos.x = obstacleHalfSize.x * sign(pos.x - obstacleCentre.x) + obstacleCentre.x;
+			vel.x *= -1 * collisionDamping;
+		}
+		else {
+			pos.y = obstacleHalfSize.y * sign(pos.y - obstacleCentre.y) + obstacleCentre.y;
+			vel.y *= -1 * collisionDamping;
+		}
 	}
     Positions[particleIndex] = pos;
 	Velocities[particleIndex] = vel;

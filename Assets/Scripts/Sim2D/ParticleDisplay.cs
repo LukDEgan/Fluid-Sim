@@ -1,0 +1,75 @@
+using UnityEngine;
+
+public class ParticleDisplay : MonoBehaviour
+{
+    public Simulation sim;
+    public Mesh mesh;
+    public Shader shader;
+    public float scale = 1f;
+    public float velocityDisplayMax = 5f;
+    public Gradient colourMap;
+
+    Material material;
+    Bounds bounds;
+    Texture2D gradientTexture;
+
+    void Start()
+    {
+        material = new Material(shader);
+        bounds = new Bounds(Vector3.zero, Vector3.one * 10000);
+    }
+
+    void LateUpdate()
+    {
+        if (shader == null || mesh == null || sim == null)
+            return;
+
+        material.SetBuffer("Positions", sim.positionBuffer);
+        material.SetBuffer("Velocities", sim.velocityBuffer);
+
+        material.SetFloat("scale", scale);
+        material.SetFloat("velocityMax", velocityDisplayMax);
+        TextureFromGradient(ref gradientTexture, 64, colourMap);
+        material.SetTexture("ColourMap", gradientTexture);
+        Graphics.DrawMeshInstancedProcedural(
+            mesh,
+            0,
+            material,
+            bounds,
+            sim.positionBuffer.count
+        );
+    }
+    public static void TextureFromGradient(ref Texture2D texture, int width, Gradient gradient, FilterMode filterMode = FilterMode.Bilinear)
+    {
+        if (texture == null)
+        {
+            texture = new Texture2D(width, 1);
+        }
+        else if (texture.width != width)
+        {
+            texture.Reinitialize(width, 1);
+        }
+
+        if (gradient == null)
+        {
+            gradient = new Gradient();
+            gradient.SetKeys(
+                new GradientColorKey[] { new GradientColorKey(Color.black, 0), new GradientColorKey(Color.black, 1) },
+                new GradientAlphaKey[] { new GradientAlphaKey(1, 0), new GradientAlphaKey(1, 1) }
+            );
+        }
+
+        texture.wrapMode = TextureWrapMode.Clamp;
+        texture.filterMode = filterMode;
+
+        Color[] cols = new Color[width];
+        for (int i = 0; i < cols.Length; i++)
+        {
+            float t = i / (cols.Length - 1f);
+            cols[i] = gradient.Evaluate(t);
+        }
+
+        texture.SetPixels(cols);
+        texture.Apply();
+    }
+}

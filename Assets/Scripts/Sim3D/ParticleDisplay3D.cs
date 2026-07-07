@@ -1,8 +1,8 @@
 using UnityEngine;
 
-public class ParticleDisplay : MonoBehaviour
+public class ParticleDisplay3D : MonoBehaviour
 {
-    public Simulation sim;
+    public Simulation3D sim;
     public Mesh mesh;
     public Shader shader;
     public float scale = 1f;
@@ -36,7 +36,7 @@ public class ParticleDisplay : MonoBehaviour
             0,
             material,
             bounds,
-            sim.numberOfParticles
+            sim.positionBuffer.count
         );
     }
     public static void TextureFromGradient(ref Texture2D texture, int width, Gradient gradient, FilterMode filterMode = FilterMode.Bilinear)

@@ -1,12 +1,8 @@
 
 using System;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-
 using UnityEngine;
-using UnityEngine.InputSystem;
-using UnityEngine.UIElements;
-
+using Unity.Mathematics;
+using UnityEngine.Serialization;
 
 public class Simulation : MonoBehaviour
 {
@@ -15,7 +11,7 @@ public class Simulation : MonoBehaviour
     public float timeScale = 1f;
     public int maxTimestepFPS = 60;
     public int substeps = 4;
-    public int numberOfParticles;
+
     public float pressureMultiplier;
     public float nearPressureMultiplier;
     public float viscosityStrength = 0.5f;
@@ -27,6 +23,8 @@ public class Simulation : MonoBehaviour
     public float collisionDamping = 0.95f;
     public float smoothingRadius;
     public Vector2 boundsSize;
+    public Vector2 obstacleSize;
+    public Vector2 obstacleCentre;
 
     [Header("Interaction Settings")]
     public float interactionRadius = 2f;
@@ -34,12 +32,13 @@ public class Simulation : MonoBehaviour
 
     [Header("Dependencies")]
     public ComputeShader simCompute;
+    public Spawner spawner;
+    Spawner.ParticleSpawnData spawnData;
     bool isPaused;
     bool stepOneFrame;
     int threadGroupSize = 256;
     Vector2[] positions;
     Vector2[] velocities;
-    Entry[] spatialLookup;
     int[] startIndices;
     Vector2[] predictedPositions;
     Vector2[] densities; // density and near density
@@ -49,7 +48,7 @@ public class Simulation : MonoBehaviour
     int CalculateViscosityForceKernel;
     int updatePositionKernelKernel;
 
-
+    int numberOfParticles;
 
 
     (int x, int y)[] cellOffSets =
@@ -65,123 +64,19 @@ public class Simulation : MonoBehaviour
     public ComputeBuffer velocityBuffer { get; private set; }
     public ComputeBuffer densitiesBuffer { get; private set; }
     ComputeBuffer predictedPositionBuffer;
-
-    public struct Entry : IComparable<Entry>
+    void SetInitialBufferData(Spawner.ParticleSpawnData spawnData)
     {
-        public int particleIndex;
-        public uint cellKey;
+        float2[] allPoints = new float2[spawnData.positions.Length]; //
+        System.Array.Copy(spawnData.positions, allPoints, spawnData.positions.Length);
 
-        public Entry(int particleIndex, uint cellKey)
-        {
-            this.particleIndex = particleIndex;
-            this.cellKey = cellKey;
-        }
-
-        public int CompareTo(Entry other)
-        {
-            return cellKey.CompareTo(other.cellKey);
-        }
+        positionBuffer.SetData(allPoints);
+        predictedPositionBuffer.SetData(allPoints);
+        velocityBuffer.SetData(spawnData.velocities);
     }
-
-
-
-
-    public void UpdateSpatialLookup(Vector2[] points)
-    {
-
-        Parallel.For(0, points.Length, i =>
-        {
-            (int cellX, int cellY) = PositionToCellCord(points[i], smoothingRadius);
-            uint cellKey = GetKeyFromHash(HashCell(cellX, cellY));
-            spatialLookup[i] = new Entry(i, cellKey);
-            startIndices[i] = int.MaxValue;
-        });
-        Array.Sort(spatialLookup);
-        Parallel.For(0, points.Length, i =>
-        {
-            uint key = spatialLookup[i].cellKey;
-            uint keyPrev = i == 0 ? uint.MaxValue : spatialLookup[i - 1].cellKey;
-            if (key != keyPrev)
-            {
-                startIndices[key] = i;
-            }
-        });
-    }
-    public (int x, int y) PositionToCellCord(Vector2 point, float cellSize)
-    {
-        int cellX = Mathf.FloorToInt(point.x / cellSize);
-        int cellY = Mathf.FloorToInt(point.y / cellSize);
-        return (cellX, cellY);
-    }
-    public uint HashCell(int cellX, int cellY)
-    {
-        uint a = (uint)cellX * 15823;
-        uint b = (uint)cellY * 9737333;
-        return a + b;
-    }
-    public uint GetKeyFromHash(uint hash)
-    {
-        return hash % (uint)spatialLookup.Length;
-    }
-
-    public void ForEachPointWithinRadius(Vector2 samplePoint, Action<int> callback)
-    {
-        (int centreX, int centreY) = PositionToCellCord(samplePoint, smoothingRadius);
-        float sqrRadius = smoothingRadius * smoothingRadius;
-
-        foreach ((int offSetX, int offSetY) in cellOffSets)
-
-        {
-            uint key = GetKeyFromHash(HashCell(centreX + offSetX, centreY + offSetY));
-            int cellStartIndex = startIndices[key];
-            if (cellStartIndex == int.MaxValue)
-                continue;
-
-            for (int i = cellStartIndex; i < spatialLookup.Length; i++)
-            {
-                if (spatialLookup[i].cellKey != key) break;
-                int particleIndex = spatialLookup[i].particleIndex;
-                float sqrDst = (predictedPositions[particleIndex] - samplePoint).sqrMagnitude;
-                if (sqrDst <= sqrRadius)
-                {
-                    callback(particleIndex);
-                }
-            }
-        }
-    }
-
-
-
-    void SpawnUniformParticles()
-    {
-
-        densities = new Vector2[numberOfParticles];
-        positions = new Vector2[numberOfParticles];
-        velocities = new Vector2[numberOfParticles];
-        predictedPositions = new Vector2[numberOfParticles];
-        spatialLookup = new Entry[numberOfParticles];
-        startIndices = new int[numberOfParticles];
-
-        int particlesPerRow = (int)Math.Sqrt(numberOfParticles);
-        int particlesPerCol = (numberOfParticles - 1) / particlesPerRow + 1;
-        float spacing = particleRadius * 2 + particleSpacing;
-
-        for (int i = 0; i < numberOfParticles; i++)
-        {
-            int row = i / particlesPerRow;
-            int col = i % particlesPerRow;
-
-            float x = (col - particlesPerRow / 2f + 0.5f) * spacing;
-            float y = (row - particlesPerCol / 2f + 0.5f) * spacing;
-
-            positions[i] = new Vector2(x, y);
-        }
-    }
-
     void Start()
     {
 
-        SpawnUniformParticles();
+
         Init();
     }
     void Init()
@@ -189,21 +84,24 @@ public class Simulation : MonoBehaviour
         float deltaTime = 1 / 60f;
         Time.fixedDeltaTime = deltaTime;
 
+        spawnData = spawner.GetSpawnData();
+        numberOfParticles = spawnData.positions.Length;
+        densities = new Vector2[numberOfParticles];
         positionBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
         densitiesBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
         predictedPositionBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
         velocityBuffer = new ComputeBuffer(numberOfParticles, sizeof(float) * 2);
 
-        positionBuffer.SetData(positions);
-        velocityBuffer.SetData(velocities);
-        predictedPositionBuffer.SetData(predictedPositions);
-        densitiesBuffer.SetData(densities);
+
 
         externalForcesKernel = simCompute.FindKernel("ExternalForces");
         calculateDensitiesKernel = simCompute.FindKernel("CalculateDensities");
         calculatePressureForceKernel = simCompute.FindKernel("CalculatePressureForce");
         CalculateViscosityForceKernel = simCompute.FindKernel("CalculateViscosityForce");
         updatePositionKernelKernel = simCompute.FindKernel("UpdatePositions");
+
+        SetInitialBufferData(spawnData);
+        densitiesBuffer.SetData(densities);
 
         simCompute.SetBuffer(externalForcesKernel, "Positions", positionBuffer);
         simCompute.SetBuffer(externalForcesKernel, "Velocities", velocityBuffer);
@@ -221,6 +119,8 @@ public class Simulation : MonoBehaviour
 
         simCompute.SetBuffer(updatePositionKernelKernel, "Positions", positionBuffer);
         simCompute.SetBuffer(updatePositionKernelKernel, "Velocities", velocityBuffer);
+
+        simCompute.SetInt("numParticles", numberOfParticles);
 
     }
     void SimulationStepGPU(float dt)
@@ -261,7 +161,6 @@ public class Simulation : MonoBehaviour
     }
     void UpdateSettings(float dt)
     {
-        simCompute.SetInt("numParticles", numberOfParticles);
         simCompute.SetFloat("deltaTime", dt);
         simCompute.SetFloat("gravity", gravity);
         simCompute.SetFloat("collisionDamping", collisionDamping);
@@ -271,6 +170,8 @@ public class Simulation : MonoBehaviour
         simCompute.SetFloat("nearPressureMultiplier", nearPressureMultiplier);
         simCompute.SetFloat("viscosityStrength", viscosityStrength);
         simCompute.SetVector("boundsSize", boundsSize);
+        simCompute.SetVector("obstacleSize", obstacleSize);
+        simCompute.SetVector("obstacleCentre", obstacleCentre);
 
         Vector2 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         bool isPullInteraction = Input.GetMouseButton(0);
@@ -296,6 +197,9 @@ public class Simulation : MonoBehaviour
 
     void OnDrawGizmos()
     {
+        Gizmos.color = new Color(0, 1, 0, 0.4f);
+        Gizmos.DrawWireCube(Vector2.zero, boundsSize);
+        Gizmos.DrawWireCube(obstacleCentre, obstacleSize);
         if (boundsSize != null)
         {
             Gizmos.DrawWireCube(Vector2.zero, boundsSize);
