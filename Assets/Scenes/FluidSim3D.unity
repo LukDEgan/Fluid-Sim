@@ -447,14 +447,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Spawner3D
   spawnDensity: 500
-  initialVelocity: {x: 0, y: 0, z: 0}
+  initialVelocity: {x: 0, y: 3, z: 0}
   jitterStrength: 0.06
   spawnRegions:
-  - position: {x: 1.47, y: 0, z: 0}
-    size: {x: 3, y: 3, z: 3}
+  - position: {x: 0, y: 0, z: 0}
+    size: {x: 5.2, y: 3, z: 3}
     debugColor: {r: 1, g: 0.24056602, b: 0.24056602, a: 1}
   showSpawnBoundsGizmos: 1
-  spawnParticleCount: 13824
+  spawnParticleCount: 24192
 --- !u!114 &1934829024
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -470,14 +470,14 @@ MonoBehaviour:
   timeScale: 1
   maxTimestepFPS: 60
   substeps: 2
-  pressureMultiplier: 200
-  nearPressureMultiplier: 5
+  pressureMultiplier: 130
+  nearPressureMultiplier: 10
   viscosityStrength: 0.01
   gravity: 10
-  targetDensity: 400
-  collisionDamping: 0.8
+  targetDensity: 220
+  collisionDamping: 0.5
   smoothingRadius: 0.35
-  boundsSize: {x: 6.65, y: 4, z: 5}
+  boundsSize: {x: 14.01, y: 4, z: 5}
   obstacleSize: {x: 0, y: 0, z: 0}
   obstacleCentre: {x: 0, y: 0, z: 0}
   interactionRadius: 2
